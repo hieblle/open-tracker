@@ -17,6 +17,7 @@ struct OpenTrackerApp: App {
         } label: {
             MenuBarLabel()
                 .environment(model.pomodoro)
+                .environment(model.tracker)
         }
         .menuBarExtraStyle(.window)
     }

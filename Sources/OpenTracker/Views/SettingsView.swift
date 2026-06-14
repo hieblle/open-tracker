@@ -41,6 +41,12 @@ struct SettingsView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
+            Stepper("Fokusphase ab: \(settings.focusPhaseMinutes) min",
+                    value: $settings.focusPhaseMinutes, in: 5...60, step: 5)
+            Text("So lange ununterbrochen produktiv = eine Fokusphase, deren Unterbrechungen gezählt werden.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
             Divider()
 
             Text("Alle Daten bleiben lokal auf deinem Mac.")

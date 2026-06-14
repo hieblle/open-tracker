@@ -16,6 +16,13 @@ final class ActivityTracker {
     private(set) var isIdle: Bool = false
     private(set) var isTracking: Bool = false
 
+    /// User-controlled manual override of automatic tracking.
+    enum ManualMode { case none, recovery, distraction }
+    private(set) var manualMode: ManualMode = .none
+
+    var isPaused: Bool { manualMode == .recovery }
+    var isDistracted: Bool { manualMode == .distraction }
+
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let usage: UsageStore
     @ObservationIgnored private var timer: Timer?
@@ -63,10 +70,31 @@ final class ActivityTracker {
         isTracking = false
     }
 
+    // MARK: Manual controls
+
+    /// Recovery break (coffee, walk): time counts as a neutral pause.
+    func toggleRecoveryBreak() {
+        manualMode = (manualMode == .recovery) ? .none : .recovery
+        lastTick = Date()
+    }
+
+    /// External interruption: time counts as a distraction.
+    func toggleDistraction() {
+        manualMode = (manualMode == .distraction) ? .none : .distraction
+        lastTick = Date()
+    }
+
+    func resumeTracking() {
+        manualMode = .none
+        lastTick = Date()
+    }
+
     private func updateCurrentApp() {
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
         currentBundleId = app.bundleIdentifier
         currentAppName = app.localizedName ?? app.bundleIdentifier ?? "Unbekannt"
+
+        guard manualMode == .none else { return } // keep the manual "Pause"/"Abgelenkt" label
 
         if BrowserScripting.isBrowser(currentBundleId) {
             refreshDomain()
@@ -80,6 +108,22 @@ final class ActivityTracker {
         let now = Date()
         let delta = min(now.timeIntervalSince(lastTick ?? now), tickInterval * 3)
         lastTick = now
+
+        // Manual override: user-marked pause or external distraction.
+        switch manualMode {
+        case .recovery:
+            isIdle = false
+            if delta > 0 { usage.recordManualBreak(reason: .recovery, seconds: delta) }
+            currentActivity = "Pause"
+            return
+        case .distraction:
+            isIdle = false
+            if delta > 0 { usage.recordManualBreak(reason: .distraction, seconds: delta) }
+            currentActivity = "Externe Ablenkung"
+            return
+        case .none:
+            break
+        }
 
         if Self.systemIdleSeconds() >= TimeInterval(settings.idleThresholdSeconds) {
             isIdle = true

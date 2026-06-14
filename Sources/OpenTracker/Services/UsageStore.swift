@@ -44,16 +44,23 @@ final class UsageStore {
         switch kind {
         case .app(let bundleId, let name): today.addApp(seconds: seconds, bundleId: bundleId, name: name)
         case .website(let domain): today.addDomain(seconds: seconds, domain: domain)
-        case .idle: break
+        case .idle, .manualBreak: break
         }
         appendSegment(kind: kind, seconds: seconds)
         throttledSave()
     }
 
-    /// Record an idle (break) tick: timeline only, never counted as active.
+    /// Record an auto-detected idle (break) tick: timeline only.
     func recordIdle(seconds: TimeInterval) {
         rolloverIfNeeded()
         appendSegment(kind: .idle, seconds: seconds)
+        throttledSave()
+    }
+
+    /// Record a user-marked break (recovery pause or external distraction).
+    func recordManualBreak(reason: ManualBreakReason, seconds: TimeInterval) {
+        rolloverIfNeeded()
+        appendSegment(kind: .manualBreak(reason), seconds: seconds)
         throttledSave()
     }
 
@@ -98,6 +105,12 @@ final class UsageStore {
         for (domain, seconds) in day.secondsByDomain where categories.category(forDomain: domain) == category {
             total += seconds
         }
+        // User-marked external distractions count as distracting time.
+        if category == .distracting {
+            for segment in day.segments {
+                if case .manualBreak(.distraction) = segment.kind { total += segment.seconds }
+            }
+        }
         return total
     }
 
@@ -131,10 +144,10 @@ final class UsageStore {
         for segment in day.segments {
             switch segment.kind {
             case .idle:
-                if segment.seconds >= DayMetrics.breakMinimum {
-                    m.breakCount += 1
-                    m.breakSeconds += segment.seconds
-                }
+                if segment.seconds >= DayMetrics.breakMinimum { m.breakCount += 1; m.breakSeconds += segment.seconds }
+                closeFocusRun()
+            case .manualBreak(let reason):
+                if reason == .recovery, segment.seconds >= DayMetrics.breakMinimum { m.breakCount += 1; m.breakSeconds += segment.seconds }
                 closeFocusRun()
             case .app(let bundleId, _):
                 if let last = lastActiveIdentity, last != bundleId { m.contextSwitches += 1 }
@@ -158,27 +171,33 @@ final class UsageStore {
         return m
     }
 
-    /// Meta-analysis centered on **interruptions of focus phases**: how often a
-    /// productive run (>= 3 min) is broken, by what, and the fragmentation.
-    /// Switching between productive activities does NOT count as an interruption.
-    func focusAnalysis(in day: DayUsage, using categories: CategoryStore) -> FocusAnalysis {
+    /// Meta-analysis centered on **interruptions of focus phases**. A focus
+    /// phase is an uninterrupted productive run of at least `phaseMinimumSeconds`;
+    /// switching between productive activities does NOT count as an interruption.
+    func focusAnalysis(in day: DayUsage,
+                       using categories: CategoryStore,
+                       phaseMinimumSeconds: Double = FocusAnalysis.interruptionFocusMinimum) -> FocusAnalysis {
         func rating(of kind: ActivitySegment.Kind) -> AppCategory {
             switch kind {
             case .app(let bundleId, _): return categories.category(forApp: bundleId)
             case .website(let domain): return categories.category(forDomain: domain)
-            case .idle: return .neutral
+            case .idle, .manualBreak: return .neutral
             }
         }
         func label(of segment: ActivitySegment) -> String {
             switch segment.kind {
             case .app(_, let name): return name
             case .website(let domain): return domain
-            case .idle: return "Pause"
+            case .idle, .manualBreak(.recovery): return "Pause"
+            case .manualBreak(.distraction): return "Externe Ablenkung"
             }
         }
         func interruptionKind(of segment: ActivitySegment) -> InterruptionKind {
-            if segment.isIdle { return .pause }
-            return rating(of: segment.kind) == .distracting ? .distraction : .neutral
+            switch segment.kind {
+            case .idle, .manualBreak(.recovery): return .pause
+            case .manualBreak(.distraction): return .distraction
+            case .app, .website: return rating(of: segment.kind) == .distracting ? .distraction : .neutral
+            }
         }
 
         var blockDurations: [Double] = []
@@ -199,7 +218,7 @@ final class UsageStore {
             guard currentRun > 0 else { return }
             blockDurations.append(currentRun)
             if currentRun >= DayMetrics.focusSessionMinimum { deep += currentRun } else { scattered += currentRun }
-            if currentRun >= FocusAnalysis.interruptionFocusMinimum {
+            if currentRun >= phaseMinimumSeconds {
                 focusPhaseCount += 1
                 if let interrupter {
                     let kind = interruptionKind(of: interrupter)
@@ -216,7 +235,7 @@ final class UsageStore {
         }
 
         for segment in day.segments {
-            if segment.isIdle {
+            if segment.interruptsFocus {
                 closeRun(interruptedBy: segment)
                 continue
             }

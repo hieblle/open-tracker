@@ -13,22 +13,40 @@ struct ActivitySegment: Codable, Hashable {
     enum Kind: Codable, Hashable {
         case app(bundleId: String, name: String)
         case website(domain: String)
-        case idle // a break / away-from-keyboard period
+        case idle                            // auto-detected inactivity (a break)
+        case manualBreak(ManualBreakReason)  // user-marked pause or distraction
     }
 
     var seconds: TimeInterval { max(0, end.timeIntervalSince(start)) }
 
-    var isIdle: Bool {
-        if case .idle = kind { return true }
-        return false
+    /// True for anything that breaks focus and is not active app/website use.
+    var interruptsFocus: Bool {
+        switch kind {
+        case .idle, .manualBreak: return true
+        case .app, .website: return false
+        }
     }
 
-    /// Stable identity used to detect context switches (nil for idle).
+    /// True for time that counts as a recovery break (not a distraction).
+    var isRecoveryBreak: Bool {
+        switch kind {
+        case .idle, .manualBreak(.recovery): return true
+        default: return false
+        }
+    }
+
+    /// Stable identity used to detect context switches (nil for non-active).
     var identity: String? {
         switch kind {
         case .app(let bundleId, _): return bundleId
         case .website(let domain): return domain
-        case .idle: return nil
+        case .idle, .manualBreak: return nil
         }
     }
+}
+
+/// Why a manual break was started.
+enum ManualBreakReason: String, Codable, Hashable {
+    case recovery     // intentional rest (coffee, walk) → neutral
+    case distraction  // external interruption → counts as a distraction
 }

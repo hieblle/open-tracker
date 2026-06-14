@@ -83,13 +83,15 @@ struct DayDetailView: View {
     @Environment(UsageStore.self) private var usage
     @Environment(CategoryStore.self) private var categories
     @Environment(ProjectStore.self) private var projects
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         let day = usage.day(for: date)
         let metrics = usage.metrics(in: day, using: categories)
         let rows = usage.activitySummaries(in: day, using: categories)
         let projectTotals = usage.projectTotals(in: day, using: projects)
-        let analysis = usage.focusAnalysis(in: day, using: categories)
+        let analysis = usage.focusAnalysis(in: day, using: categories,
+                                           phaseMinimumSeconds: Double(settings.focusPhaseMinutes * 60))
 
         VStack(alignment: .leading, spacing: 20) {
             RatingSummaryCard(
@@ -107,7 +109,7 @@ struct DayDetailView: View {
                     TimelineStrip(segments: day.segments, categories: categories)
                 }
 
-                FocusQualitySection(analysis: analysis)
+                FocusQualitySection(analysis: analysis, phaseMinutes: settings.focusPhaseMinutes)
 
                 if !projectTotals.isEmpty {
                     ProjectBreakdownCard(totals: projectTotals)
@@ -130,6 +132,7 @@ struct WeekDetailView: View {
     @Environment(UsageStore.self) private var usage
     @Environment(CategoryStore.self) private var categories
     @Environment(ProjectStore.self) private var projects
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         let days = usage.recentDays(7)
@@ -146,7 +149,8 @@ struct WeekDetailView: View {
         let weekMetrics = usage.metrics(in: week, using: categories)
         let rows = usage.activitySummaries(in: week, using: categories)
         let projectTotals = usage.projectTotals(in: week, using: projects)
-        let analysis = usage.focusAnalysis(in: week, using: categories)
+        let analysis = usage.focusAnalysis(in: week, using: categories,
+                                           phaseMinimumSeconds: Double(settings.focusPhaseMinutes * 60))
 
         VStack(alignment: .leading, spacing: 20) {
             WeeklyBarChart(bars: bars)
@@ -157,7 +161,7 @@ struct WeekDetailView: View {
                 distracting: weekMetrics.distractingSeconds,
                 title: "Diese Woche (7 Tage)"
             )
-            FocusQualitySection(analysis: analysis)
+            FocusQualitySection(analysis: analysis, phaseMinutes: settings.focusPhaseMinutes)
             if !projectTotals.isEmpty {
                 ProjectBreakdownCard(totals: projectTotals, title: "Projekte (Woche)")
             }

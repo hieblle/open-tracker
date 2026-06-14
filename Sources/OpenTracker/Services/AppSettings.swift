@@ -12,6 +12,7 @@ final class AppSettings: ObservableObject {
     @Published var longBreakMinutes: Int { didSet { defaults.set(longBreakMinutes, forKey: "longBreakMinutes") } }
     @Published var pomodorosUntilLongBreak: Int { didSet { defaults.set(pomodorosUntilLongBreak, forKey: "pomodorosUntilLongBreak") } }
     @Published var idleThresholdSeconds: Int { didSet { defaults.set(idleThresholdSeconds, forKey: "idleThresholdSeconds") } }
+    @Published var focusPhaseMinutes: Int { didSet { defaults.set(focusPhaseMinutes, forKey: "focusPhaseMinutes") } }
 
     private let defaults = UserDefaults.standard
 
@@ -23,5 +24,6 @@ final class AppSettings: ObservableObject {
         longBreakMinutes = d.object(forKey: "longBreakMinutes") as? Int ?? 15
         pomodorosUntilLongBreak = d.object(forKey: "pomodorosUntilLongBreak") as? Int ?? 4
         idleThresholdSeconds = d.object(forKey: "idleThresholdSeconds") as? Int ?? 120
+        focusPhaseMinutes = d.object(forKey: "focusPhaseMinutes") as? Int ?? 15
     }
 }

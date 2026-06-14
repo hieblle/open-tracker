@@ -6,11 +6,12 @@ import SwiftUI
 /// because switching between productive tools is not an interruption.
 struct FocusQualitySection: View {
     let analysis: FocusAnalysis
+    var phaseMinutes: Int = 15
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Fokus-Unterbrechungen").font(.headline)
-            Text("Wie oft deine Produktivphasen (≥ 3 min am Stück) unterbrochen werden. Wechsel zwischen produktiven Tätigkeiten zählen bewusst nicht.")
+            Text("Wie oft deine Produktivphasen (≥ \(phaseMinutes) min am Stück) unterbrochen werden. Wechsel zwischen produktiven Tätigkeiten zählen bewusst nicht.")
                 .font(.caption).foregroundStyle(.secondary)
 
             HStack(spacing: 14) {

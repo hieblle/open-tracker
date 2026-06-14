@@ -106,7 +106,8 @@ struct TimelineStrip: View {
 
     private func color(for segment: ActivitySegment) -> Color {
         switch segment.kind {
-        case .idle: return Self.breakColor
+        case .idle, .manualBreak(.recovery): return Self.breakColor
+        case .manualBreak(.distraction): return AppCategory.distracting.color
         case .app(let bundleId, _): return categories.category(forApp: bundleId).color
         case .website(let domain): return categories.category(forDomain: domain).color
         }

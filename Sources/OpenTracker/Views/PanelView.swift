@@ -26,6 +26,7 @@ struct PanelView: View {
             Divider()
             TodaySummaryView()
             Divider()
+            manualControls
             ScrollView {
                 ActivityListView(
                     title: "Aktivität heute",
@@ -36,6 +37,43 @@ struct PanelView: View {
             .frame(maxHeight: 220)
             dashboardButton
             footer
+        }
+    }
+
+    @ViewBuilder
+    private var manualControls: some View {
+        if tracker.manualMode == .none {
+            HStack(spacing: 8) {
+                Button { tracker.toggleRecoveryBreak() } label: {
+                    Label("Pause", systemImage: "pause.circle").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.blue)
+                .help("Erholungspause – zählt als neutrale Pause")
+
+                Button { tracker.toggleDistraction() } label: {
+                    Label("Ablenkung", systemImage: "exclamationmark.bubble").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+                .help("Externe Unterbrechung – zählt als Ablenkung")
+            }
+            .controlSize(.small)
+        } else {
+            HStack(spacing: 8) {
+                Label(
+                    tracker.isPaused ? "Pausiert" : "Externe Ablenkung",
+                    systemImage: tracker.isPaused ? "pause.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(tracker.isPaused ? Color.blue : Color.orange)
+                Spacer()
+                Button { tracker.resumeTracking() } label: {
+                    Label("Fortsetzen", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .font(.callout)
         }
     }
 
