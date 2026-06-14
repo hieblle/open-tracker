@@ -158,8 +158,9 @@ final class UsageStore {
         return m
     }
 
-    /// Meta-analysis: focus fragmentation, app/tab switches, and the activities
-    /// that most often interrupt flow.
+    /// Meta-analysis centered on **interruptions of focus phases**: how often a
+    /// productive run (>= 3 min) is broken, by what, and the fragmentation.
+    /// Switching between productive activities does NOT count as an interruption.
     func focusAnalysis(in day: DayUsage, using categories: CategoryStore) -> FocusAnalysis {
         func rating(of kind: ActivitySegment.Kind) -> AppCategory {
             switch kind {
@@ -175,13 +176,21 @@ final class UsageStore {
             case .idle: return "Pause"
             }
         }
+        func interruptionKind(of segment: ActivitySegment) -> InterruptionKind {
+            if segment.isIdle { return .pause }
+            return rating(of: segment.kind) == .distracting ? .distraction : .neutral
+        }
 
         var blockDurations: [Double] = []
         var deep = 0.0
         var scattered = 0.0
-        var interrupterCounts: [String: Int] = [:]
         var appSwitches = 0
         var tabSwitches = 0
+        var focusPhaseCount = 0
+        var byDistraction = 0
+        var byNeutral = 0
+        var byBreak = 0
+        var interrupterMap: [String: (count: Int, kind: InterruptionKind)] = [:]
 
         var currentRun = 0.0
         var previousActive: ActivitySegment.Kind?
@@ -190,8 +199,18 @@ final class UsageStore {
             guard currentRun > 0 else { return }
             blockDurations.append(currentRun)
             if currentRun >= DayMetrics.focusSessionMinimum { deep += currentRun } else { scattered += currentRun }
-            if currentRun >= FocusAnalysis.interruptionFocusMinimum, let interrupter {
-                interrupterCounts[label(of: interrupter), default: 0] += 1
+            if currentRun >= FocusAnalysis.interruptionFocusMinimum {
+                focusPhaseCount += 1
+                if let interrupter {
+                    let kind = interruptionKind(of: interrupter)
+                    switch kind {
+                    case .distraction: byDistraction += 1
+                    case .neutral: byNeutral += 1
+                    case .pause: byBreak += 1
+                    }
+                    let name = label(of: interrupter)
+                    interrupterMap[name] = ((interrupterMap[name]?.count ?? 0) + 1, kind)
+                }
             }
             currentRun = 0
         }
@@ -220,6 +239,10 @@ final class UsageStore {
         closeRun(interruptedBy: nil)
 
         let totalFocus = deep + scattered
+        let interrupters = interrupterMap
+            .map { FocusInterrupter(label: $0.key, count: $0.value.count, kind: $0.value.kind) }
+            .sorted { $0.count > $1.count }
+
         return FocusAnalysis(
             focusBlockCount: blockDurations.count,
             averageFocusBlockSeconds: blockDurations.isEmpty ? 0 : totalFocus / Double(blockDurations.count),
@@ -227,9 +250,11 @@ final class UsageStore {
             scatteredFocusSeconds: scattered,
             appSwitches: appSwitches,
             tabSwitches: tabSwitches,
-            interrupters: interrupterCounts
-                .map { FocusInterrupter(label: $0.key, count: $0.value) }
-                .sorted { $0.count > $1.count }
+            focusPhaseCount: focusPhaseCount,
+            interruptionsByDistraction: byDistraction,
+            interruptionsByNeutral: byNeutral,
+            interruptionsByBreak: byBreak,
+            interrupters: interrupters
         )
     }
 

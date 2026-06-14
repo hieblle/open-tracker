@@ -1,70 +1,73 @@
 import SwiftUI
 
-/// Meta-analysis card: fragmentation, deep vs scattered focus, switch types and
-/// the most frequent flow interrupters.
+/// Meta-analysis card centered on **interruptions of focus phases** — the thing
+/// that actually matters: when does sustained productive work get broken, and
+/// by what. Raw context switches are shown only as a small secondary line,
+/// because switching between productive tools is not an interruption.
 struct FocusQualitySection: View {
     let analysis: FocusAnalysis
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Fokus-Qualität").font(.headline)
+            Text("Fokus-Unterbrechungen").font(.headline)
+            Text("Wie oft deine Produktivphasen (≥ 3 min am Stück) unterbrochen werden. Wechsel zwischen produktiven Tätigkeiten zählen bewusst nicht.")
+                .font(.caption).foregroundStyle(.secondary)
 
             HStack(spacing: 14) {
                 StatTile(
-                    title: "Fragmentierung",
-                    value: "\(Int((analysis.fragmentation * 100).rounded()))%",
-                    subtitle: fragmentationLabel,
-                    systemImage: "puzzlepiece",
-                    tint: fragmentationColor
+                    title: "Unterbrechungen",
+                    value: "\(analysis.focusInterruptions)",
+                    subtitle: "von \(analysis.focusPhaseCount) Fokusphasen",
+                    systemImage: "bolt.horizontal.circle",
+                    tint: .orange
                 )
                 StatTile(
-                    title: "Ø Fokus-Block",
+                    title: "pro Fokus-Stunde",
+                    value: analysis.totalFocusSeconds > 0 ? String(format: "%.1f", analysis.interruptionsPerFocusHour) : "—",
+                    subtitle: "wie oft gestört",
+                    systemImage: "speedometer",
+                    tint: .purple
+                )
+                StatTile(
+                    title: "Ø ungestörte Phase",
                     value: analysis.averageFocusBlockSeconds > 0 ? formatDuration(analysis.averageFocusBlockSeconds) : "—",
-                    subtitle: "\(analysis.focusBlockCount) Block/Blöcke",
+                    subtitle: "\(analysis.focusBlockCount) Phasen gesamt",
                     systemImage: "square.stack",
                     tint: AppCategory.productive.color
                 )
                 StatTile(
-                    title: "App-Wechsel",
-                    value: "\(analysis.appSwitches)",
-                    subtitle: "zwischen Apps",
-                    systemImage: "macwindow.on.rectangle",
-                    tint: .purple
-                )
-                StatTile(
-                    title: "Tab-Wechsel",
-                    value: "\(analysis.tabSwitches)",
-                    subtitle: "zwischen Websites",
-                    systemImage: "square.on.square",
-                    tint: .indigo
+                    title: "Tiefer Fokus",
+                    value: analysis.deepFocusSeconds > 0 ? formatDuration(analysis.deepFocusSeconds) : "—",
+                    subtitle: "in Phasen ≥ 15 min",
+                    systemImage: "bolt.fill",
+                    tint: AppCategory.productive.color
                 )
             }
 
-            if analysis.totalFocusSeconds > 0 {
+            if analysis.focusInterruptions > 0 {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Tiefer Fokus (≥ 15 min) vs. zerstückelt")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        Text("\(formatDuration(analysis.deepFocusSeconds)) · \(formatDuration(analysis.scatteredFocusSeconds))")
-                            .font(.caption2).foregroundStyle(.secondary)
+                    Text("Wodurch wirst du unterbrochen?")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 20) {
+                        causeItem(.distraction, analysis.interruptionsByDistraction)
+                        causeItem(.neutral, analysis.interruptionsByNeutral)
+                        causeItem(.pause, analysis.interruptionsByBreak)
                     }
-                    ProportionBar(segments: [
-                        .init(value: analysis.deepFocusSeconds, color: AppCategory.productive.color),
-                        .init(value: analysis.scatteredFocusSeconds, color: AppCategory.productive.color.opacity(0.35)),
-                    ], height: 12)
                 }
             }
 
             if analysis.interrupters.isEmpty {
-                Text("Keine unterbrochenen Fokus-Phasen erkannt – stark! 🎯")
+                Text("Keine unterbrochenen Fokusphasen erkannt – stark! 🎯")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Häufigste Flow-Unterbrecher").font(.subheadline.bold())
+                    Text("Häufigste Unterbrecher").font(.subheadline.bold())
                     ForEach(analysis.interrupters.prefix(6)) { interrupter in
-                        HStack {
+                        HStack(spacing: 8) {
+                            Circle().fill(interrupter.kind.color).frame(width: 8, height: 8)
                             Text(interrupter.label).lineLimit(1)
+                            Text("· \(interrupter.kind.title)")
+                                .font(.caption2).foregroundStyle(.secondary)
                             Spacer()
                             Text("\(interrupter.count)×")
                                 .font(.callout.monospacedDigit())
@@ -73,23 +76,20 @@ struct FocusQualitySection: View {
                     }
                 }
             }
+
+            Divider().opacity(0.4)
+            Text("Kontextwechsel gesamt: \(analysis.appSwitches) App · \(analysis.tabSwitches) Tab · Fragmentierung \(Int((analysis.fragmentation * 100).rounded()))%")
+                .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.secondary.opacity(0.08)))
     }
 
-    private var fragmentationLabel: String {
-        switch analysis.fragmentation {
-        case ..<0.25: return "sehr fokussiert"
-        case ..<0.5: return "okay"
-        case ..<0.75: return "eher zerstückelt"
-        default: return "stark zerstückelt"
+    private func causeItem(_ kind: InterruptionKind, _ count: Int) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(kind.color).frame(width: 9, height: 9)
+            Text(kind.title).font(.caption).foregroundStyle(.secondary)
+            Text("\(count)").font(.caption.bold().monospacedDigit())
         }
-    }
-
-    private var fragmentationColor: Color {
-        if analysis.fragmentation < 0.4 { return AppCategory.productive.color }
-        if analysis.fragmentation < 0.7 { return .orange }
-        return AppCategory.distracting.color
     }
 }
