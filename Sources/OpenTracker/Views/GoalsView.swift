@@ -20,7 +20,7 @@ struct GoalsView: View {
 
         VStack(alignment: .leading, spacing: 22) {
             if progress.isEmpty {
-                Text("Setze tägliche Ziele – z. B. „mindestens 4 h Fokus" oder „höchstens 30 min Ablenkung". Wähle eine Vorlage oder erstelle ein eigenes Ziel.")
+                Text("Setze tägliche Ziele – etwa mindestens 4 h Fokus oder höchstens 30 min Ablenkung. Wähle eine Vorlage oder erstelle ein eigenes Ziel.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
