@@ -18,4 +18,9 @@ struct ActivitySummary: Identifiable {
         case .website(let domain): return "web:\(domain)"
         }
     }
+
+    var isApp: Bool {
+        if case .app = kind { return true }
+        return false
+    }
 }

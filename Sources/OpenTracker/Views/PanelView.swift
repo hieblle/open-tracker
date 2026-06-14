@@ -34,8 +34,20 @@ struct PanelView: View {
                 )
             }
             .frame(maxHeight: 220)
+            dashboardButton
             footer
         }
+    }
+
+    private var dashboardButton: some View {
+        Button {
+            DashboardWindowController.shared.show()
+        } label: {
+            Label("Dashboard öffnen", systemImage: "chart.bar.xaxis")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 
     private var footer: some View {
