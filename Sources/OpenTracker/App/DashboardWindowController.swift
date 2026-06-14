@@ -27,6 +27,7 @@ final class DashboardWindowController {
             .environment(model.usage)
             .environment(model.categories)
             .environment(model.projects)
+            .environment(model.goals)
             .environmentObject(model.settings)
 
         let hosting = NSHostingController(rootView: root)

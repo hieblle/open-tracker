@@ -326,6 +326,31 @@ final class UsageStore {
         activitySummaries(in: merged(recentDays(daysBack)), using: categories)
     }
 
+    // MARK: Goals
+
+    /// Seconds for a goal metric on a given day.
+    func seconds(for metric: GoalMetric,
+                 in day: DayUsage,
+                 using categories: CategoryStore,
+                 projects: ProjectStore) -> Double {
+        switch metric {
+        case .workTime:
+            return seconds(for: .productive, in: day, using: categories)
+                + seconds(for: .neutral, in: day, using: categories)
+                + seconds(for: .distracting, in: day, using: categories)
+        case .focusTime:
+            return seconds(for: .productive, in: day, using: categories)
+        case .neutralTime:
+            return seconds(for: .neutral, in: day, using: categories)
+        case .distractingTime:
+            return seconds(for: .distracting, in: day, using: categories)
+        case .breakTime:
+            return metrics(in: day, using: categories).breakSeconds
+        case .project(let id):
+            return projectTotals(in: day, using: projects).first { $0.project.id == id }?.seconds ?? 0
+        }
+    }
+
     // MARK: Persistence
 
     func save() {

@@ -9,6 +9,7 @@ struct DashboardView: View {
     enum Mode: String, CaseIterable, Identifiable {
         case day = "Tag"
         case week = "Woche"
+        case goals = "Ziele"
         case manage = "Verwalten"
         var id: String { rawValue }
     }
@@ -22,6 +23,7 @@ struct DashboardView: View {
                     switch mode {
                     case .day: DayDetailView(date: selectedDate)
                     case .week: WeekDetailView()
+                    case .goals: GoalsView()
                     case .manage: ManagementView()
                     }
                 }
@@ -83,6 +85,7 @@ struct DayDetailView: View {
     @Environment(UsageStore.self) private var usage
     @Environment(CategoryStore.self) private var categories
     @Environment(ProjectStore.self) private var projects
+    @Environment(GoalStore.self) private var goals
     @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
@@ -90,6 +93,7 @@ struct DayDetailView: View {
         let metrics = usage.metrics(in: day, using: categories)
         let rows = usage.activitySummaries(in: day, using: categories)
         let projectTotals = usage.projectTotals(in: day, using: projects)
+        let goalProgress = goals.progress(day: day, usage: usage, categories: categories, projects: projects)
         let analysis = usage.focusAnalysis(in: day, using: categories,
                                            phaseMinimumSeconds: Double(settings.focusPhaseMinutes * 60))
 
@@ -99,6 +103,10 @@ struct DayDetailView: View {
                 neutral: metrics.neutralSeconds,
                 distracting: metrics.distractingSeconds
             )
+
+            if !goalProgress.isEmpty {
+                GoalsCard(progress: goalProgress)
+            }
 
             if metrics.activeSeconds == 0 {
                 EmptyDayHint()
