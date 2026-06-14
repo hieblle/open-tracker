@@ -18,7 +18,9 @@ final class GoalStore {
         persist()
     }
 
+    /// Add a template once — ignores duplicates of the same metric + direction.
     func addTemplate(_ template: GoalTemplate) {
+        guard !hasGoal(metric: template.metric, direction: template.direction) else { return }
         add(Goal(
             id: UUID().uuidString,
             title: template.title,
@@ -26,6 +28,24 @@ final class GoalStore {
             direction: template.direction,
             targetMinutes: template.defaultMinutes
         ))
+    }
+
+    func hasGoal(metric: GoalMetric, direction: GoalDirection) -> Bool {
+        goals.contains { $0.metric == metric && $0.direction == direction }
+    }
+
+    /// Adjust a goal's daily target.
+    func setTarget(_ minutes: Int, for id: String) {
+        guard let index = goals.firstIndex(where: { $0.id == id }) else { return }
+        goals[index].targetMinutes = max(1, minutes)
+        persist()
+    }
+
+    /// Flip between "at least" and "at most".
+    func setDirection(_ direction: GoalDirection, for id: String) {
+        guard let index = goals.firstIndex(where: { $0.id == id }) else { return }
+        goals[index].direction = direction
+        persist()
     }
 
     func remove(id: String) {

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// "Ziele" tab: today's goal progress, one-click templates, a custom builder,
-/// and management of existing goals.
+/// "Ziele" tab: today's progress, an editable list of your goals (set the
+/// target time, flip direction, delete), one-click templates, and a custom builder.
 struct GoalsView: View {
     @Environment(UsageStore.self) private var usage
     @Environment(CategoryStore.self) private var categories
@@ -20,33 +20,88 @@ struct GoalsView: View {
 
         VStack(alignment: .leading, spacing: 22) {
             if progress.isEmpty {
-                Text("Noch keine Ziele. Wähle unten eine Vorlage oder erstelle ein eigenes Ziel.")
+                Text("Setze tägliche Ziele – z. B. „mindestens 4 h Fokus" oder „höchstens 30 min Ablenkung". Wähle eine Vorlage oder erstelle ein eigenes Ziel.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 GoalsCard(progress: progress)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Vorlagen").font(.headline)
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
-                    ForEach(GoalStore.templates) { template in
-                        templateCard(template)
-                    }
-                }
-            }
+            if !goals.goals.isEmpty { myGoalsSection }
+
+            templatesSection
 
             Divider()
             customBuilder
+        }
+    }
 
-            if !goals.goals.isEmpty {
-                Divider()
-                manageSection
+    // MARK: My goals (editable)
+
+    private var myGoalsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Meine Ziele").font(.headline)
+            Text("Zielzeit über die Pfeile anpassen, Richtung per Klick umschalten.")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(goals.goals) { goal in
+                HStack(spacing: 12) {
+                    Image(systemName: "target").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(goal.title).font(.subheadline)
+                        Text(metricLabel(goal.metric)).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+
+                    Menu {
+                        Button("Mindestens") { goals.setDirection(.atLeast, for: goal.id) }
+                        Button("Höchstens") { goals.setDirection(.atMost, for: goal.id) }
+                    } label: {
+                        Text(goal.direction == .atLeast ? "mindestens" : "höchstens")
+                            .font(.caption)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+
+                    Stepper(value: Binding(
+                        get: { goal.targetMinutes },
+                        set: { goals.setTarget($0, for: goal.id) }
+                    ), in: 15...1440, step: 15) {
+                        Text(formatDuration(Double(goal.targetMinutes * 60)))
+                            .monospacedDigit()
+                            .frame(width: 86, alignment: .trailing)
+                    }
+                    .fixedSize()
+
+                    Button(role: .destructive) {
+                        goals.remove(id: goal.id)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Ziel löschen")
+                }
+                .padding(.vertical, 3)
+                Divider().opacity(0.4)
+            }
+        }
+    }
+
+    // MARK: Templates
+
+    private var templatesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Vorlagen").font(.headline)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                ForEach(GoalStore.templates) { template in
+                    templateCard(template)
+                }
             }
         }
     }
 
     private func templateCard(_ template: GoalTemplate) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let exists = goals.hasGoal(metric: template.metric, direction: template.direction)
+        return VStack(alignment: .leading, spacing: 8) {
             Text(template.title).font(.subheadline.bold())
             Text(template.description)
                 .font(.caption).foregroundStyle(.secondary)
@@ -55,15 +110,19 @@ struct GoalsView: View {
             Button {
                 goals.addTemplate(template)
             } label: {
-                Label("Hinzufügen", systemImage: "plus").font(.caption)
+                Label(exists ? "Hinzugefügt" : "Hinzufügen",
+                      systemImage: exists ? "checkmark" : "plus").font(.caption)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .disabled(exists)
         }
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
     }
+
+    // MARK: Custom builder
 
     private var customBuilder: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -88,32 +147,27 @@ struct GoalsView: View {
                     .fixedSize()
                 }
 
-                Stepper("\(minutes) min", value: $minutes, in: 15...720, step: 15)
-                    .fixedSize()
+                Stepper(value: $minutes, in: 15...1440, step: 15) {
+                    Text(formatDuration(Double(minutes * 60))).monospacedDigit().frame(width: 86, alignment: .trailing)
+                }
+                .fixedSize()
 
-                Button("Ziel hinzufügen", action: addCustom)
+                Button("Hinzufügen", action: addCustom)
                     .disabled(kind == .project && projectId.isEmpty)
             }
         }
     }
 
-    private var manageSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Meine Ziele").font(.headline)
-            ForEach(goals.goals) { goal in
-                HStack {
-                    Text(goal.direction == .atLeast ? "≥" : "≤").foregroundStyle(.secondary)
-                    Text(goal.title)
-                    Spacer()
-                    Text("\(goal.targetMinutes) min").font(.caption).foregroundStyle(.secondary)
-                    Button(role: .destructive) {
-                        goals.remove(id: goal.id)
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
+    // MARK: Helpers
+
+    private func metricLabel(_ metric: GoalMetric) -> String {
+        switch metric {
+        case .workTime: return "Arbeitszeit"
+        case .focusTime: return "Fokuszeit"
+        case .neutralTime: return "Neutrale Zeit"
+        case .distractingTime: return "Ablenkung"
+        case .breakTime: return "Pausen"
+        case .project(let id): return "Projekt: \(projects.projectById(id)?.name ?? "—")"
         }
     }
 
