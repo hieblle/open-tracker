@@ -158,6 +158,81 @@ final class UsageStore {
         return m
     }
 
+    /// Meta-analysis: focus fragmentation, app/tab switches, and the activities
+    /// that most often interrupt flow.
+    func focusAnalysis(in day: DayUsage, using categories: CategoryStore) -> FocusAnalysis {
+        func rating(of kind: ActivitySegment.Kind) -> AppCategory {
+            switch kind {
+            case .app(let bundleId, _): return categories.category(forApp: bundleId)
+            case .website(let domain): return categories.category(forDomain: domain)
+            case .idle: return .neutral
+            }
+        }
+        func label(of segment: ActivitySegment) -> String {
+            switch segment.kind {
+            case .app(_, let name): return name
+            case .website(let domain): return domain
+            case .idle: return "Pause"
+            }
+        }
+
+        var blockDurations: [Double] = []
+        var deep = 0.0
+        var scattered = 0.0
+        var interrupterCounts: [String: Int] = [:]
+        var appSwitches = 0
+        var tabSwitches = 0
+
+        var currentRun = 0.0
+        var previousActive: ActivitySegment.Kind?
+
+        func closeRun(interruptedBy interrupter: ActivitySegment?) {
+            guard currentRun > 0 else { return }
+            blockDurations.append(currentRun)
+            if currentRun >= DayMetrics.focusSessionMinimum { deep += currentRun } else { scattered += currentRun }
+            if currentRun >= FocusAnalysis.interruptionFocusMinimum, let interrupter {
+                interrupterCounts[label(of: interrupter), default: 0] += 1
+            }
+            currentRun = 0
+        }
+
+        for segment in day.segments {
+            if segment.isIdle {
+                closeRun(interruptedBy: segment)
+                continue
+            }
+            if let previous = previousActive {
+                switch (previous, segment.kind) {
+                case (.app(let a, _), .app(let b, _)): if a != b { appSwitches += 1 }
+                case (.website(let a), .website(let b)): if a != b { tabSwitches += 1 }
+                case (.app, .website), (.website, .app): appSwitches += 1
+                default: break
+                }
+            }
+            previousActive = segment.kind
+
+            if rating(of: segment.kind) == .productive {
+                currentRun += segment.seconds
+            } else {
+                closeRun(interruptedBy: segment)
+            }
+        }
+        closeRun(interruptedBy: nil)
+
+        let totalFocus = deep + scattered
+        return FocusAnalysis(
+            focusBlockCount: blockDurations.count,
+            averageFocusBlockSeconds: blockDurations.isEmpty ? 0 : totalFocus / Double(blockDurations.count),
+            deepFocusSeconds: deep,
+            scatteredFocusSeconds: scattered,
+            appSwitches: appSwitches,
+            tabSwitches: tabSwitches,
+            interrupters: interrupterCounts
+                .map { FocusInterrupter(label: $0.key, count: $0.value) }
+                .sorted { $0.count > $1.count }
+        )
+    }
+
     // MARK: History
 
     func day(for date: Date) -> DayUsage {

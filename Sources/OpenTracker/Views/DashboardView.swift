@@ -89,6 +89,7 @@ struct DayDetailView: View {
         let metrics = usage.metrics(in: day, using: categories)
         let rows = usage.activitySummaries(in: day, using: categories)
         let projectTotals = usage.projectTotals(in: day, using: projects)
+        let analysis = usage.focusAnalysis(in: day, using: categories)
 
         VStack(alignment: .leading, spacing: 20) {
             RatingSummaryCard(
@@ -105,6 +106,8 @@ struct DayDetailView: View {
                 if !day.segments.isEmpty {
                     TimelineStrip(segments: day.segments, categories: categories)
                 }
+
+                FocusQualitySection(analysis: analysis)
 
                 if !projectTotals.isEmpty {
                     ProjectBreakdownCard(totals: projectTotals)
@@ -143,6 +146,7 @@ struct WeekDetailView: View {
         let weekMetrics = usage.metrics(in: week, using: categories)
         let rows = usage.activitySummaries(in: week, using: categories)
         let projectTotals = usage.projectTotals(in: week, using: projects)
+        let analysis = usage.focusAnalysis(in: week, using: categories)
 
         VStack(alignment: .leading, spacing: 20) {
             WeeklyBarChart(bars: bars)
@@ -153,6 +157,7 @@ struct WeekDetailView: View {
                 distracting: weekMetrics.distractingSeconds,
                 title: "Diese Woche (7 Tage)"
             )
+            FocusQualitySection(analysis: analysis)
             if !projectTotals.isEmpty {
                 ProjectBreakdownCard(totals: projectTotals, title: "Projekte (Woche)")
             }
