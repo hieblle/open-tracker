@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The main dashboard window: a detailed day view (with history navigation) and
-/// a 7-day week overview.
+/// The main dashboard window: detailed day view (with history navigation),
+/// a 7-day week overview, and a management tab for projects & categories.
 struct DashboardView: View {
     @State private var mode: Mode = .day
     @State private var dayOffset: Int = 0 // 0 = today, 1 = yesterday, …
@@ -9,6 +9,7 @@ struct DashboardView: View {
     enum Mode: String, CaseIterable, Identifiable {
         case day = "Tag"
         case week = "Woche"
+        case manage = "Verwalten"
         var id: String { rawValue }
     }
 
@@ -21,12 +22,13 @@ struct DashboardView: View {
                     switch mode {
                     case .day: DayDetailView(date: selectedDate)
                     case .week: WeekDetailView()
+                    case .manage: ManagementView()
                     }
                 }
                 .padding(20)
             }
         }
-        .frame(minWidth: 820, minHeight: 560)
+        .frame(minWidth: 860, minHeight: 580)
     }
 
     private var selectedDate: Date {
@@ -80,11 +82,13 @@ struct DayDetailView: View {
     let date: Date
     @Environment(UsageStore.self) private var usage
     @Environment(CategoryStore.self) private var categories
+    @Environment(ProjectStore.self) private var projects
 
     var body: some View {
         let day = usage.day(for: date)
         let metrics = usage.metrics(in: day, using: categories)
         let rows = usage.activitySummaries(in: day, using: categories)
+        let projectTotals = usage.projectTotals(in: day, using: projects)
 
         VStack(alignment: .leading, spacing: 20) {
             RatingSummaryCard(
@@ -100,6 +104,10 @@ struct DayDetailView: View {
 
                 if !day.segments.isEmpty {
                     TimelineStrip(segments: day.segments, categories: categories)
+                }
+
+                if !projectTotals.isEmpty {
+                    ProjectBreakdownCard(totals: projectTotals)
                 }
 
                 HStack(alignment: .top, spacing: 20) {
@@ -118,6 +126,7 @@ struct DayDetailView: View {
 struct WeekDetailView: View {
     @Environment(UsageStore.self) private var usage
     @Environment(CategoryStore.self) private var categories
+    @Environment(ProjectStore.self) private var projects
 
     var body: some View {
         let days = usage.recentDays(7)
@@ -133,6 +142,7 @@ struct WeekDetailView: View {
         let week = usage.merged(days)
         let weekMetrics = usage.metrics(in: week, using: categories)
         let rows = usage.activitySummaries(in: week, using: categories)
+        let projectTotals = usage.projectTotals(in: week, using: projects)
 
         VStack(alignment: .leading, spacing: 20) {
             WeeklyBarChart(bars: bars)
@@ -143,6 +153,9 @@ struct WeekDetailView: View {
                 distracting: weekMetrics.distractingSeconds,
                 title: "Diese Woche (7 Tage)"
             )
+            if !projectTotals.isEmpty {
+                ProjectBreakdownCard(totals: projectTotals, title: "Projekte (Woche)")
+            }
             HStack(alignment: .top, spacing: 20) {
                 ActivityColumn(title: "Top Apps", icon: "macwindow", rows: rows.filter { $0.isApp })
                 ActivityColumn(title: "Top Websites", icon: "globe", rows: rows.filter { !$0.isApp })

@@ -9,6 +9,7 @@ final class AppModel {
 
     let settings = AppSettings()
     let categories = CategoryStore()
+    let projects = ProjectStore()
     let usage: UsageStore
     let pomodoro: PomodoroTimer
     let tracker: ActivityTracker

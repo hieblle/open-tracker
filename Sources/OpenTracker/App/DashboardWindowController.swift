@@ -26,6 +26,7 @@ final class DashboardWindowController {
         let root = DashboardView()
             .environment(model.usage)
             .environment(model.categories)
+            .environment(model.projects)
 
         let hosting = NSHostingController(rootView: root)
         let window = NSWindow(contentViewController: hosting)

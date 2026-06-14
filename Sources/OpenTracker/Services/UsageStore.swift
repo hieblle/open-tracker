@@ -184,6 +184,29 @@ final class UsageStore {
         return out
     }
 
+    // MARK: Projects
+
+    /// Time per project for a day (only assigned apps/websites).
+    func projectTotals(in day: DayUsage, using projects: ProjectStore) -> [ProjectTotal] {
+        var totals: [String: Double] = [:]
+        for (bundleId, seconds) in day.secondsByApp {
+            if let project = projects.project(forApp: bundleId) { totals[project.id, default: 0] += seconds }
+        }
+        for (domain, seconds) in day.secondsByDomain {
+            if let project = projects.project(forDomain: domain) { totals[project.id, default: 0] += seconds }
+        }
+        return totals.compactMap { id, seconds in
+            projects.projectById(id).map { ProjectTotal(project: $0, seconds: seconds) }
+        }
+        .sorted { $0.seconds > $1.seconds }
+    }
+
+    /// Unique apps & websites seen over the last `daysBack` days — for the
+    /// "Verwalten" view, so the user can categorize/assign even past items.
+    func knownActivities(daysBack: Int, using categories: CategoryStore) -> [ActivitySummary] {
+        activitySummaries(in: merged(recentDays(daysBack)), using: categories)
+    }
+
     // MARK: Persistence
 
     func save() {
