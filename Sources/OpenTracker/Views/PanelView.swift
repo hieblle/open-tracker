@@ -4,6 +4,8 @@ import AppKit
 /// The dropdown panel shown when the menu bar item is clicked.
 struct PanelView: View {
     @Environment(ActivityTracker.self) private var tracker
+    @Environment(UsageStore.self) private var usage
+    @Environment(CategoryStore.self) private var categories
     @State private var showingSettings = false
 
     var body: some View {
@@ -24,7 +26,14 @@ struct PanelView: View {
             Divider()
             TodaySummaryView()
             Divider()
-            AppUsageListView()
+            ScrollView {
+                ActivityListView(
+                    title: "Aktivität heute",
+                    rows: usage.activitySummaries(using: categories),
+                    limit: 10
+                )
+            }
+            .frame(maxHeight: 220)
             footer
         }
     }
@@ -42,7 +51,7 @@ struct PanelView: View {
             Spacer(minLength: 8)
 
             Label {
-                Text(tracker.isIdle ? "Inaktiv" : tracker.currentAppName)
+                Text(tracker.isIdle ? "Inaktiv" : tracker.currentActivity)
                     .lineLimit(1)
             } icon: {
                 Circle()

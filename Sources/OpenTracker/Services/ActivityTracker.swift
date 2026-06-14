@@ -2,17 +2,17 @@ import AppKit
 import CoreGraphics
 import Observation
 
-/// Watches the frontmost application and accrues active time per app.
+/// Watches the frontmost application and accrues active time per app — and, for
+/// supported browsers, per visited domain.
 ///
-/// Tracking is **tick based**: every few seconds we look at the foreground app
-/// and, as long as the user isn't idle, add the elapsed time to today's total.
-/// This handles long uninterrupted sessions and idle gaps cleanly without
-/// needing any special accessibility permissions — `NSWorkspace` exposes the
-/// foreground app's bundle id directly.
+/// Tracking is tick based: every few seconds we look at the foreground app and,
+/// as long as the user isn't idle, add the elapsed time. Browser domains are
+/// fetched asynchronously (Apple Events can block) and cached.
 @Observable
 final class ActivityTracker {
     private(set) var currentAppName: String = "—"
     private(set) var currentBundleId: String?
+    private(set) var currentActivity: String = "—" // app name, or domain while browsing
     private(set) var isIdle: Bool = false
     private(set) var isTracking: Bool = false
 
@@ -21,8 +21,10 @@ final class ActivityTracker {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var workspaceObserver: NSObjectProtocol?
     @ObservationIgnored private var lastTick: Date?
+    @ObservationIgnored private let scriptQueue = DispatchQueue(label: "at.neoclarity.OpenTracker.browser")
+    @ObservationIgnored private var domainFetchInFlight = false
+    @ObservationIgnored private var currentDomain: String?
 
-    /// How often we sample. Small enough to be accurate, large enough to be free.
     private let tickInterval: TimeInterval = 5
 
     init(settings: AppSettings, usage: UsageStore) {
@@ -36,7 +38,6 @@ final class ActivityTracker {
         lastTick = Date()
         updateCurrentApp()
 
-        // React instantly to app switches for a snappy "current app" readout.
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
@@ -66,29 +67,56 @@ final class ActivityTracker {
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
         currentBundleId = app.bundleIdentifier
         currentAppName = app.localizedName ?? app.bundleIdentifier ?? "Unbekannt"
+
+        if BrowserScripting.isBrowser(currentBundleId) {
+            refreshDomain()
+        } else {
+            currentDomain = nil
+            currentActivity = currentAppName
+        }
     }
 
     private func tick() {
         let now = Date()
-        // Real elapsed time, clamped so a wake-from-sleep can't dump a huge chunk.
         let delta = min(now.timeIntervalSince(lastTick ?? now), tickInterval * 3)
         lastTick = now
 
         if Self.systemIdleSeconds() >= TimeInterval(settings.idleThresholdSeconds) {
             isIdle = true
-            return // user is away — don't accrue
+            return
         }
         isIdle = false
 
         updateCurrentApp()
         guard delta > 0, let bundleId = currentBundleId else { return }
-        usage.addActiveTime(seconds: delta, bundleId: bundleId, name: currentAppName)
+
+        if BrowserScripting.isBrowser(bundleId), let domain = currentDomain {
+            usage.addActiveDomainTime(seconds: delta, domain: domain)
+            currentActivity = domain
+        } else {
+            usage.addActiveAppTime(seconds: delta, bundleId: bundleId, name: currentAppName)
+            currentActivity = currentAppName
+        }
+    }
+
+    /// Asynchronously refresh the active browser tab's domain into `currentDomain`.
+    private func refreshDomain() {
+        guard let bundleId = currentBundleId,
+              BrowserScripting.isBrowser(bundleId),
+              !domainFetchInFlight else { return }
+        domainFetchInFlight = true
+        scriptQueue.async { [weak self] in
+            let domain = BrowserScripting.activeDomain(forBundleId: bundleId)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.currentDomain = domain
+                if let domain { self.currentActivity = domain }
+                self.domainFetchInFlight = false
+            }
+        }
     }
 
     /// Seconds since the most recent user input of any kind.
-    ///
-    /// We take the minimum across a handful of event types rather than the
-    /// `~0` "any event" sentinel, which isn't a valid `CGEventType` case in Swift.
     static func systemIdleSeconds() -> TimeInterval {
         let types: [CGEventType] = [
             .keyDown, .leftMouseDown, .rightMouseDown,

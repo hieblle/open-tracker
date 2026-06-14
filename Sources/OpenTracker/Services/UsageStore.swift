@@ -1,10 +1,10 @@
 import AppKit
 import Observation
 
-/// Owns "today's" usage aggregate and persists it to disk.
+/// Owns "today's" usage aggregate (apps + website domains) and persists it.
 ///
 /// Data lives in `~/Library/Application Support/OpenTracker/usage-YYYY-MM-DD.json`.
-/// Writes are throttled and also flushed on quit so we never thrash the disk.
+/// Writes are throttled and also flushed on quit.
 @Observable
 final class UsageStore {
     private(set) var today: DayUsage
@@ -27,7 +27,6 @@ final class UsageStore {
         self.currentDateKey = key
         self.today = Self.load(dateKey: key, in: dir) ?? DayUsage(dateKey: key)
 
-        // Make sure we don't lose the last few seconds when the app quits.
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
@@ -37,33 +36,50 @@ final class UsageStore {
         }
     }
 
-    func addActiveTime(seconds: TimeInterval, bundleId: String, name: String) {
+    func addActiveAppTime(seconds: TimeInterval, bundleId: String, name: String) {
         rolloverIfNeeded()
-        today.add(seconds: seconds, bundleId: bundleId, name: name)
-        if Date().timeIntervalSince(lastSave) > 20 {
-            save()
+        today.addApp(seconds: seconds, bundleId: bundleId, name: name)
+        throttledSave()
+    }
+
+    func addActiveDomainTime(seconds: TimeInterval, domain: String) {
+        rolloverIfNeeded()
+        today.addDomain(seconds: seconds, domain: domain)
+        throttledSave()
+    }
+
+    /// Combined app + website rows for today, sorted by time spent.
+    func activitySummaries(using categories: CategoryStore) -> [ActivitySummary] {
+        var rows: [ActivitySummary] = []
+        for (bundleId, seconds) in today.secondsByApp {
+            rows.append(ActivitySummary(
+                kind: .app(bundleId),
+                name: today.namesByApp[bundleId] ?? bundleId,
+                seconds: seconds,
+                category: categories.category(forApp: bundleId)
+            ))
         }
+        for (domain, seconds) in today.secondsByDomain {
+            rows.append(ActivitySummary(
+                kind: .website(domain),
+                name: domain,
+                seconds: seconds,
+                category: categories.category(forDomain: domain)
+            ))
+        }
+        return rows.sorted { $0.seconds > $1.seconds }
     }
 
-    /// Per-app rows for today, sorted by time spent (descending).
-    func summaries(using categories: CategoryStore) -> [AppUsageSummary] {
-        today.secondsByApp
-            .map { bundleId, seconds in
-                AppUsageSummary(
-                    bundleId: bundleId,
-                    name: today.namesByApp[bundleId] ?? bundleId,
-                    seconds: seconds,
-                    category: categories.category(for: bundleId)
-                )
-            }
-            .sorted { $0.seconds > $1.seconds }
-    }
-
-    /// Total seconds today belonging to a given category.
+    /// Total seconds today belonging to a given category (apps + websites).
     func seconds(for category: AppCategory, using categories: CategoryStore) -> TimeInterval {
-        today.secondsByApp.reduce(0) { partial, entry in
-            categories.category(for: entry.key) == category ? partial + entry.value : partial
+        var total: TimeInterval = 0
+        for (bundleId, seconds) in today.secondsByApp where categories.category(forApp: bundleId) == category {
+            total += seconds
         }
+        for (domain, seconds) in today.secondsByDomain where categories.category(forDomain: domain) == category {
+            total += seconds
+        }
+        return total
     }
 
     func save() {
@@ -74,11 +90,14 @@ final class UsageStore {
         }
     }
 
-    /// Roll over to a fresh aggregate when the local calendar day changes.
+    private func throttledSave() {
+        if Date().timeIntervalSince(lastSave) > 20 { save() }
+    }
+
     private func rolloverIfNeeded() {
         let key = Self.dateKey(for: Date())
         guard key != currentDateKey else { return }
-        save() // persist the day that just ended
+        save()
         currentDateKey = key
         today = Self.load(dateKey: key, in: directory) ?? DayUsage(dateKey: key)
     }

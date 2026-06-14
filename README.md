@@ -2,65 +2,68 @@
 
 Ein schlanker, lokaler **Time-Tracker für macOS** in der Menüleiste — inspiriert
 von der ursprünglichen Idee hinter Rize. OpenTracker zeichnet automatisch auf,
-welche Apps du wie lange nutzt, teilt deine Zeit in **Produktiv / Neutral /
-Ablenkung** auf und bringt einen **Pomodoro-Timer** mit.
+welche **Apps und Websites** du wie lange nutzt, teilt deine Zeit in
+**Produktiv / Neutral / Ablenkung** auf und bringt einen **Pomodoro-Timer** mit.
 
 Alles passiert **lokal** auf deinem Mac. Keine Cloud, kein Account, kein Tracking
 nach außen.
 
-## Funktionen (v1)
+## Funktionen
 
 - 🟢 **Automatisches App-Tracking** — erfasst die App im Vordergrund über
-  `NSWorkspace`. Keine besonderen Berechtigungen nötig.
-- 💤 **Leerlauf-Erkennung** — bist du länger inaktiv (Standard: 2 min), wird die
-  Zeit nicht mitgezählt, damit deine Statistik ehrlich bleibt.
-- 🎯 **Fokus-Score** — Produktiv-/Neutral-/Ablenkungs-Anteil deines Tages auf
-  einen Blick, inkl. Balken und Tagesgesamtzeit.
-- 🏷️ **Kategorien pro App** — jede App per Klick als produktiv, neutral oder
+  `NSWorkspace`.
+- 🌐 **Browser-Tracking nach Domain** — in Safari, Chrome, Arc, Brave & Edge wird
+  die aktive Tab-Domain erfasst (z. B. `github.com` statt nur „Chrome"). Dafür
+  ist einmalig eine **Automatisierungs-Berechtigung** nötig (macOS fragt nach).
+- 💤 **Leerlauf-Erkennung** — bei Inaktivität (Standard: 2 min) wird Zeit nicht
+  mitgezählt.
+- 🎯 **Fokus-Score** — Produktiv-/Neutral-/Ablenkungs-Anteil deines Tages.
+- 🏷️ **Kategorien** — jede App und Website per Klick als produktiv, neutral oder
   ablenkend markieren. Sinnvolle Voreinstellungen sind dabei.
-- 🍅 **Pomodoro-Timer** — Fokus-/Pausenphasen mit Ring-Countdown direkt in der
-  Menüleiste, frei konfigurierbar.
+- 🍅 **Pomodoro-Timer** — Fokus-/Pausenphasen mit Countdown in der Menüleiste.
 
 ## Voraussetzungen
 
 - macOS 14 (Sonoma) oder neuer
-- Xcode 15 oder neuer (bzw. die passenden Command Line Tools)
+- Xcode 15 oder neuer
 
 ## Starten
 
-### Schnell ausprobieren (Terminal)
+### Empfohlen: als echte App (mit Benachrichtigungen & Browser-Tracking)
+
+```bash
+./Scripts/build-app.sh
+```
+
+Das Script baut OpenTracker, packt es in ein echtes `OpenTracker.app`-Bundle
+(mit Bundle-ID) und startet es. Erst dadurch funktionieren System-Benachrichtigungen
+und die Browser-Domain-Erfassung sauber.
+
+> Beim ersten Wechsel in einen Browser fragt macOS einmal:
+> *„OpenTracker möchte … steuern"* — auf **OK** klicken. Falls du versehentlich
+> ablehnst: *Systemeinstellungen → Datenschutz & Sicherheit → Automatisierung*.
+
+### Schnell entwickeln (Terminal)
 
 ```bash
 swift run
 ```
 
-Es erscheint ein **Timer-Symbol in der Menüleiste** (oben rechts). Klick darauf
-öffnet das Panel. Beenden über das Power-Symbol unten im Panel.
+Funktioniert für Tracking & Timer, aber ohne App-Bundle → keine Benachrichtigungen
+und Konsolen-Warnungen wegen fehlender Bundle-ID (harmlos).
 
-> Hinweis: Per `swift run` läuft die App ohne App-Bundle. Der Timer und das
-> Tracking funktionieren vollständig; nur die System-Benachrichtigungen am Ende
-> einer Pomodoro-Phase sind deaktiviert (es ertönt stattdessen ein Ton). Für
-> echte Banner siehe „Als App bauen".
-
-### In Xcode entwickeln
+### In Xcode
 
 ```bash
 open Package.swift
 ```
 
-Xcode öffnet das Paket. Schema **OpenTracker** wählen und auf **Run** (⌘R)
-drücken.
+Schema **OpenTracker** wählen und ▶︎ **Run** drücken.
 
-### Als echte `.app` bauen (mit Benachrichtigungen & Icon)
+### Bedienung
 
-Für eine verteilbare App mit Bundle-Identifier (Voraussetzung für
-Benachrichtigungen) legst du in Xcode ein **macOS App**-Target an und ziehst die
-Dateien aus `Sources/OpenTracker/` hinein. Wichtige Einstellungen:
-
-- **Info.plist**: `Application is agent (UIElement)` = `YES` (versteckt das
-  Dock-Icon — zur Laufzeit setzen wir das zusätzlich über
-  `NSApp.setActivationPolicy(.accessory)`).
-- **Signing & Capabilities**: ein Bundle-Identifier (z. B. `com.deinname.OpenTracker`).
+OpenTracker erscheint **nur in der Menüleiste** (Timer-Symbol ⏱, kein Dock-Icon).
+Klick öffnet das Panel; beenden über das Power-Symbol ⏻.
 
 ## Wo liegen meine Daten?
 
@@ -68,35 +71,34 @@ Dateien aus `Sources/OpenTracker/` hinein. Wichtige Einstellungen:
 ~/Library/Application Support/OpenTracker/usage-YYYY-MM-DD.json
 ```
 
-Pro Tag eine kleine JSON-Datei mit den Sekunden je App. Einstellungen und
-Kategorien liegen in den `UserDefaults`. Löschen = Daten weg, nichts verlässt
-den Mac.
+Pro Tag eine kleine JSON-Datei. Einstellungen und Kategorien liegen in den
+`UserDefaults`. Nichts verlässt den Mac.
 
 ## Architektur
 
 ```
 Sources/OpenTracker/
 ├── App/          App-Einstieg, AppDelegate, Service-Container
-├── Models/       AppCategory, DayUsage, AppUsageSummary, PomodoroPhase
-├── Services/     ActivityTracker, UsageStore, CategoryStore,
-│                 PomodoroTimer, AppSettings, Notifier
+├── Models/       AppCategory, DayUsage, ActivitySummary, PomodoroPhase
+├── Services/     ActivityTracker, BrowserScripting, UsageStore,
+│                 CategoryStore, PomodoroTimer, AppSettings, Notifier
 ├── Utilities/    Zeit-Formatierung
-└── Views/        Menübar-Label, Panel, Pomodoro, Statistiken, Einstellungen
+└── Views/        Menübar-Label, Panel, Pomodoro, Statistiken, Aktivitätsliste
+Resources/Info.plist   ← Bundle-ID, LSUIElement, Browser-Berechtigung
+Scripts/build-app.sh   ← baut das .app-Bundle
 ```
 
-- **ActivityTracker** sampelt im 5-Sekunden-Takt die Vordergrund-App und bucht
-  die aktive Zeit (Idle-Zeit ausgenommen) in den **UsageStore**.
-- **CategoryStore** ordnet Bundle-IDs Kategorien zu (Presets + eigene Overrides).
-- **PomodoroTimer** ist eine kleine Zustandsmaschine, die über ein absolutes
-   Enddatum tickt und so auch bei verzögerten Ticks korrekt bleibt.
+- **ActivityTracker** sampelt im 5-Sekunden-Takt die Vordergrund-App. Ist es ein
+  Browser, holt **BrowserScripting** per AppleScript die aktive Domain.
+- Zeit wird je App bzw. je Domain in den **UsageStore** gebucht.
+- **CategoryStore** bewertet Apps und Domains (Presets + eigene Overrides).
 
-## Ideen für später
+## Roadmap
 
-- Wochen-/Verlaufsansicht mit Diagrammen
-- Fenstertitel-/Projektkontext (benötigt Bedienungshilfen-Berechtigung)
-- Ziele & Streaks, automatische App-Kategorisierung
-- Export (CSV)
-- Login-Item („beim Anmelden starten")
+- 📊 **Dashboard-Fenster** mit Tag/Woche-Verlauf und Diagrammen *(als Nächstes)*
+- Benannte Arbeits-Kategorien (Development, Email …) mit Bewertung
+- Wochen-/Monatsvergleich, Ziele & Streaks
+- CSV-Export, „beim Anmelden starten"
 
 ---
 
