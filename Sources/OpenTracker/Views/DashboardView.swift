@@ -3,9 +3,6 @@ import SwiftUI
 /// The main dashboard window: a detailed day view (with history navigation) and
 /// a 7-day week overview.
 struct DashboardView: View {
-    @Environment(UsageStore.self) private var usage
-    @Environment(CategoryStore.self) private var categories
-
     @State private var mode: Mode = .day
     @State private var dayOffset: Int = 0 // 0 = today, 1 = yesterday, …
 
@@ -48,7 +45,7 @@ struct DashboardView: View {
                     Button { dayOffset += 1 } label: { Image(systemName: "chevron.left") }
                     Text(dayLabel)
                         .font(.subheadline)
-                        .frame(width: 140)
+                        .frame(width: 150)
                         .multilineTextAlignment(.center)
                     Button { if dayOffset > 0 { dayOffset -= 1 } } label: { Image(systemName: "chevron.right") }
                         .disabled(dayOffset == 0)
@@ -78,7 +75,7 @@ struct DashboardView: View {
     }
 }
 
-/// Detailed breakdown for a single day.
+/// Detailed breakdown + insights for a single day.
 struct DayDetailView: View {
     let date: Date
     @Environment(UsageStore.self) private var usage
@@ -86,23 +83,29 @@ struct DayDetailView: View {
 
     var body: some View {
         let day = usage.day(for: date)
-        let productive = usage.seconds(for: .productive, in: day, using: categories)
-        let neutral = usage.seconds(for: .neutral, in: day, using: categories)
-        let distracting = usage.seconds(for: .distracting, in: day, using: categories)
+        let metrics = usage.metrics(in: day, using: categories)
         let rows = usage.activitySummaries(in: day, using: categories)
-        let apps = rows.filter { $0.isApp }
-        let websites = rows.filter { !$0.isApp }
 
         VStack(alignment: .leading, spacing: 20) {
-            RatingSummaryCard(productive: productive, neutral: neutral, distracting: distracting)
+            RatingSummaryCard(
+                productive: metrics.focusSeconds,
+                neutral: metrics.neutralSeconds,
+                distracting: metrics.distractingSeconds
+            )
 
-            if productive + neutral + distracting == 0 {
+            if metrics.activeSeconds == 0 {
                 EmptyDayHint()
             } else {
+                InsightsRow(metrics: metrics)
+
+                if !day.segments.isEmpty {
+                    TimelineStrip(segments: day.segments, categories: categories)
+                }
+
                 HStack(alignment: .top, spacing: 20) {
-                    ActivityColumn(title: "Apps", icon: "macwindow", rows: apps)
+                    ActivityColumn(title: "Apps", icon: "macwindow", rows: rows.filter { $0.isApp })
                     ActivityColumn(
-                        title: "Websites", icon: "globe", rows: websites,
+                        title: "Websites", icon: "globe", rows: rows.filter { !$0.isApp },
                         emptyText: "Noch keine Web-Aktivität – im Browser surfen (Berechtigung nötig)."
                     )
                 }
@@ -111,7 +114,7 @@ struct DayDetailView: View {
     }
 }
 
-/// 7-day overview with a stacked bar chart and aggregated totals.
+/// 7-day overview with a stacked bar chart, aggregated insights and totals.
 struct WeekDetailView: View {
     @Environment(UsageStore.self) private var usage
     @Environment(CategoryStore.self) private var categories
@@ -126,22 +129,41 @@ struct WeekDetailView: View {
                 distracting: usage.seconds(for: .distracting, in: day, using: categories)
             )
         }
+        let perDayMetrics = days.map { usage.metrics(in: $0, using: categories) }
         let week = usage.merged(days)
-        let productive = usage.seconds(for: .productive, in: week, using: categories)
-        let neutral = usage.seconds(for: .neutral, in: week, using: categories)
-        let distracting = usage.seconds(for: .distracting, in: week, using: categories)
+        let weekMetrics = usage.metrics(in: week, using: categories)
         let rows = usage.activitySummaries(in: week, using: categories)
 
         VStack(alignment: .leading, spacing: 20) {
             WeeklyBarChart(bars: bars)
+            weekInsights(week: weekMetrics, perDay: perDayMetrics)
             RatingSummaryCard(
-                productive: productive, neutral: neutral, distracting: distracting,
+                productive: weekMetrics.focusSeconds,
+                neutral: weekMetrics.neutralSeconds,
+                distracting: weekMetrics.distractingSeconds,
                 title: "Diese Woche (7 Tage)"
             )
             HStack(alignment: .top, spacing: 20) {
                 ActivityColumn(title: "Top Apps", icon: "macwindow", rows: rows.filter { $0.isApp })
                 ActivityColumn(title: "Top Websites", icon: "globe", rows: rows.filter { !$0.isApp })
             }
+        }
+    }
+
+    private func weekInsights(week: DayMetrics, perDay: [DayMetrics]) -> some View {
+        let activeDays = max(perDay.filter { $0.activeSeconds > 0 }.count, 1)
+        return HStack(spacing: 14) {
+            StatTile(title: "Fokuszeit gesamt", value: formatDuration(week.focusSeconds),
+                     subtitle: "Ø \(formatDuration(week.focusSeconds / Double(activeDays))) / aktivem Tag",
+                     systemImage: "target", tint: AppCategory.productive.color)
+            StatTile(title: "Kontextwechsel", value: "\(week.contextSwitches)",
+                     subtitle: "diese Woche", systemImage: "arrow.left.arrow.right", tint: .purple)
+            StatTile(title: "Pausen", value: "\(week.breakCount)",
+                     subtitle: week.breakSeconds > 0 ? formatDuration(week.breakSeconds) : "—",
+                     systemImage: "cup.and.saucer", tint: .blue)
+            StatTile(title: "Aktive Zeit", value: formatDuration(week.activeSeconds),
+                     subtitle: "Ø \(formatDuration(week.activeSeconds / Double(activeDays))) / Tag",
+                     systemImage: "clock", tint: .teal)
         }
     }
 

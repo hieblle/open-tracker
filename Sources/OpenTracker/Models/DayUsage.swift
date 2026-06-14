@@ -2,9 +2,9 @@ import Foundation
 
 /// Aggregated foreground usage for a single calendar day.
 ///
-/// Tracks time per app *and* per browser domain. Browser time is attributed to
-/// the visited domain (e.g. `github.com`) rather than to the browser app, which
-/// is what makes the breakdown actually useful.
+/// Keeps both fast per-app / per-domain totals *and* an ordered `segments`
+/// timeline. The totals answer "what did I use and for how long?"; the timeline
+/// answers "how focused / scattered was I, and when did I take breaks?".
 struct DayUsage: Codable {
     /// Calendar day in `yyyy-MM-dd` form (local time) — also the file name key.
     let dateKey: String
@@ -18,11 +18,15 @@ struct DayUsage: Codable {
     /// Active foreground seconds keyed by website domain (e.g. `github.com`).
     var secondsByDomain: [String: TimeInterval]
 
+    /// Ordered timeline of activity (incl. breaks) over the day.
+    var segments: [ActivitySegment]
+
     init(dateKey: String) {
         self.dateKey = dateKey
         self.secondsByApp = [:]
         self.namesByApp = [:]
         self.secondsByDomain = [:]
+        self.segments = []
     }
 
     mutating func addApp(seconds: TimeInterval, bundleId: String, name: String) {
@@ -38,9 +42,9 @@ struct DayUsage: Codable {
         secondsByApp.values.reduce(0, +) + secondsByDomain.values.reduce(0, +)
     }
 
-    // Custom decoding so older files (without `secondsByDomain`) still load.
+    // Custom decoding so older files (without the newer keys) still load.
     enum CodingKeys: String, CodingKey {
-        case dateKey, secondsByApp, namesByApp, secondsByDomain
+        case dateKey, secondsByApp, namesByApp, secondsByDomain, segments
     }
 
     init(from decoder: Decoder) throws {
@@ -49,5 +53,6 @@ struct DayUsage: Codable {
         secondsByApp = try c.decodeIfPresent([String: TimeInterval].self, forKey: .secondsByApp) ?? [:]
         namesByApp = try c.decodeIfPresent([String: String].self, forKey: .namesByApp) ?? [:]
         secondsByDomain = try c.decodeIfPresent([String: TimeInterval].self, forKey: .secondsByDomain) ?? [:]
+        segments = try c.decodeIfPresent([ActivitySegment].self, forKey: .segments) ?? []
     }
 }

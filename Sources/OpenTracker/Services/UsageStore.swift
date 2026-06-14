@@ -1,8 +1,8 @@
 import AppKit
 import Observation
 
-/// Owns "today's" usage aggregate (apps + website domains), persists it, and
-/// loads historical days for the dashboard.
+/// Owns "today's" usage (totals + timeline), persists it, and answers both
+/// simple totals and derived metrics for the dashboard.
 ///
 /// Data lives in `~/Library/Application Support/OpenTracker/usage-YYYY-MM-DD.json`.
 @Observable
@@ -38,21 +38,37 @@ final class UsageStore {
 
     // MARK: Recording
 
-    func addActiveAppTime(seconds: TimeInterval, bundleId: String, name: String) {
+    /// Record active foreground time: updates totals and extends the timeline.
+    func recordActive(kind: ActivitySegment.Kind, seconds: TimeInterval) {
         rolloverIfNeeded()
-        today.addApp(seconds: seconds, bundleId: bundleId, name: name)
+        switch kind {
+        case .app(let bundleId, let name): today.addApp(seconds: seconds, bundleId: bundleId, name: name)
+        case .website(let domain): today.addDomain(seconds: seconds, domain: domain)
+        case .idle: break
+        }
+        appendSegment(kind: kind, seconds: seconds)
         throttledSave()
     }
 
-    func addActiveDomainTime(seconds: TimeInterval, domain: String) {
+    /// Record an idle (break) tick: timeline only, never counted as active.
+    func recordIdle(seconds: TimeInterval) {
         rolloverIfNeeded()
-        today.addDomain(seconds: seconds, domain: domain)
+        appendSegment(kind: .idle, seconds: seconds)
         throttledSave()
     }
 
-    // MARK: Queries (day-scoped)
+    private func appendSegment(kind: ActivitySegment.Kind, seconds: TimeInterval) {
+        let now = Date()
+        if var last = today.segments.last, last.kind == kind {
+            last.end = now
+            today.segments[today.segments.count - 1] = last
+        } else {
+            today.segments.append(ActivitySegment(start: now.addingTimeInterval(-seconds), end: now, kind: kind))
+        }
+    }
 
-    /// Combined app + website rows for a day, sorted by time spent.
+    // MARK: Totals (day-scoped)
+
     func activitySummaries(in day: DayUsage, using categories: CategoryStore) -> [ActivitySummary] {
         var rows: [ActivitySummary] = []
         for (bundleId, seconds) in day.secondsByApp {
@@ -74,7 +90,6 @@ final class UsageStore {
         return rows.sorted { $0.seconds > $1.seconds }
     }
 
-    /// Total seconds in a day belonging to a category (apps + websites).
     func seconds(for category: AppCategory, in day: DayUsage, using categories: CategoryStore) -> TimeInterval {
         var total: TimeInterval = 0
         for (bundleId, seconds) in day.secondsByApp where categories.category(forApp: bundleId) == category {
@@ -95,16 +110,62 @@ final class UsageStore {
         seconds(for: category, in: today, using: categories)
     }
 
+    // MARK: Derived metrics
+
+    /// Focus time, breaks, context switches and focus sessions for a day.
+    func metrics(in day: DayUsage, using categories: CategoryStore) -> DayMetrics {
+        var m = DayMetrics.zero
+        m.focusSeconds = seconds(for: .productive, in: day, using: categories)
+        m.neutralSeconds = seconds(for: .neutral, in: day, using: categories)
+        m.distractingSeconds = seconds(for: .distracting, in: day, using: categories)
+
+        var currentFocusRun: Double = 0
+        var lastActiveIdentity: String?
+
+        func closeFocusRun() {
+            m.longestFocusSeconds = max(m.longestFocusSeconds, currentFocusRun)
+            if currentFocusRun >= DayMetrics.focusSessionMinimum { m.focusSessionCount += 1 }
+            currentFocusRun = 0
+        }
+
+        for segment in day.segments {
+            switch segment.kind {
+            case .idle:
+                if segment.seconds >= DayMetrics.breakMinimum {
+                    m.breakCount += 1
+                    m.breakSeconds += segment.seconds
+                }
+                closeFocusRun()
+            case .app(let bundleId, _):
+                if let last = lastActiveIdentity, last != bundleId { m.contextSwitches += 1 }
+                lastActiveIdentity = bundleId
+                if categories.category(forApp: bundleId) == .productive {
+                    currentFocusRun += segment.seconds
+                } else {
+                    closeFocusRun()
+                }
+            case .website(let domain):
+                if let last = lastActiveIdentity, last != domain { m.contextSwitches += 1 }
+                lastActiveIdentity = domain
+                if categories.category(forDomain: domain) == .productive {
+                    currentFocusRun += segment.seconds
+                } else {
+                    closeFocusRun()
+                }
+            }
+        }
+        closeFocusRun()
+        return m
+    }
+
     // MARK: History
 
-    /// The aggregate for a given calendar day — live for today, from disk otherwise.
     func day(for date: Date) -> DayUsage {
         let key = Self.dateKey(for: date)
         if key == today.dateKey { return today }
         return Self.load(dateKey: key, in: directory) ?? DayUsage(dateKey: key)
     }
 
-    /// The last `count` days, oldest first (today last).
     func recentDays(_ count: Int) -> [DayUsage] {
         let calendar = Calendar.current
         return (0..<count).reversed().compactMap { offset in
@@ -112,13 +173,13 @@ final class UsageStore {
         }
     }
 
-    /// Merge several days into one synthetic aggregate (for week/range totals).
     func merged(_ days: [DayUsage]) -> DayUsage {
         var out = DayUsage(dateKey: "range")
         for day in days {
             for (key, value) in day.secondsByApp { out.secondsByApp[key, default: 0] += value }
             for (key, value) in day.namesByApp where out.namesByApp[key] == nil { out.namesByApp[key] = value }
             for (key, value) in day.secondsByDomain { out.secondsByDomain[key, default: 0] += value }
+            out.segments.append(contentsOf: day.segments)
         }
         return out
     }

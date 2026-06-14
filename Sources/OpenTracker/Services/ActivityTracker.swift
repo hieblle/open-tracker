@@ -83,6 +83,7 @@ final class ActivityTracker {
 
         if Self.systemIdleSeconds() >= TimeInterval(settings.idleThresholdSeconds) {
             isIdle = true
+            if delta > 0 { usage.recordIdle(seconds: delta) }
             return
         }
         isIdle = false
@@ -91,10 +92,10 @@ final class ActivityTracker {
         guard delta > 0, let bundleId = currentBundleId else { return }
 
         if BrowserScripting.isBrowser(bundleId), let domain = currentDomain {
-            usage.addActiveDomainTime(seconds: delta, domain: domain)
+            usage.recordActive(kind: .website(domain: domain), seconds: delta)
             currentActivity = domain
         } else {
-            usage.addActiveAppTime(seconds: delta, bundleId: bundleId, name: currentAppName)
+            usage.recordActive(kind: .app(bundleId: bundleId, name: currentAppName), seconds: delta)
             currentActivity = currentAppName
         }
     }
